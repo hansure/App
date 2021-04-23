@@ -1,0 +1,66 @@
+options:
+  docker: true
+  size: 2x
+  
+definitions:
+  services:
+    docker:
+      memory: 7128
+      
+pipelines:
+  branches:
+    master:
+        - step:
+            name: Build & Deploy
+            image: google/cloud-sdk:latest
+            script:
+            - export PORT=3000
+            #- export DEPLOYNAME=${BITBUCKET_REPO_SLUG//_/}
+            #- export DEPLOYNAME=${BITBUCKET_REPO_SLUG//-/}
+            #- export DNS=$DEPLOYNAME.k8s.sandboxaddis.com
+            - export DEPLOYNAME=jops
+            - export DNS="jopsethiopia.org"
+            - echo $GCLOUD_API_KEYFILE > ~/.gcloud-api-key.json
+            - export IMAGE_NAME=$DOCKER_GCR_REPO_URL/$GCLOUD_PROJECT_ID/$BITBUCKET_REPO_SLUG:${BITBUCKET_COMMIT}-${BITBUCKET_BUILD_NUMBER}-${BITBUCKET_BRANCH}
+            - gcloud auth activate-service-account --key-file ~/.gcloud-api-key.json
+            - docker login -u _json_key --password-stdin https://$DOCKER_GCR_REPO_URL < ~/.gcloud-api-key.json
+            - docker build -t $IMAGE_NAME .
+            - docker push $IMAGE_NAME
+            #Deployment
+            - gcloud container clusters get-credentials $K8s_CLUSTER_NAME --zone=$GCLOUD_ZONE --project $GCLOUD_PROJECT_ID
+            - sed -i "s|{{image}}|$IMAGE_NAME|g" deployment.yml
+            - sed -i "s|{{dns}}|$DNS|g" deployment.yml
+            - sed -i "s|{{name}}|$DEPLOYNAME-$BITBUCKET_BRANCH|g" deployment.yml
+            - sed -i "s|{{port}}|$PORT|g" deployment.yml
+            - kubectl create ns $BITBUCKET_WORKSPACE || true
+            - kubectl apply -n $BITBUCKET_WORKSPACE -f deployment.yml
+            - echo "all done please visit https://$DNS"
+            services:
+              - docker
+    dev:
+        - step:
+            name: Build & Deploy
+            image: google/cloud-sdk:latest
+            script:
+            - export PORT=3000
+            #- export DEPLOYNAME=${BITBUCKET_REPO_SLUG//_/}
+            #- export DEPLOYNAME=${BITBUCKET_REPO_SLUG//-/}
+            - export DEPLOYNAME=jops
+            - export DNS="dev.jopsethiopia.org"
+            - echo $GCLOUD_API_KEYFILE > ~/.gcloud-api-key.json
+            - export IMAGE_NAME=$DOCKER_GCR_REPO_URL/$GCLOUD_PROJECT_ID/$BITBUCKET_REPO_SLUG:${BITBUCKET_COMMIT}-${BITBUCKET_BUILD_NUMBER}-${BITBUCKET_BRANCH}
+            - gcloud auth activate-service-account --key-file ~/.gcloud-api-key.json
+            - docker login -u _json_key --password-stdin https://$DOCKER_GCR_REPO_URL < ~/.gcloud-api-key.json
+            - docker build -t $IMAGE_NAME .
+            - docker push $IMAGE_NAME
+            #Deployment
+            - gcloud container clusters get-credentials $K8s_CLUSTER_NAME --zone=$GCLOUD_ZONE --project $GCLOUD_PROJECT_ID
+            - sed -i "s|{{image}}|$IMAGE_NAME|g" deployment.yml
+            - sed -i "s|{{dns}}|$DNS|g" deployment.yml
+            - sed -i "s|{{name}}|$DEPLOYNAME-$BITBUCKET_BRANCH|g" deployment.yml
+            - sed -i "s|{{port}}|$PORT|g" deployment.yml
+            - kubectl create ns $BITBUCKET_WORKSPACE || true
+            - kubectl apply -n $BITBUCKET_WORKSPACE -f deployment.yml
+            - echo "all done please visit https://$DNS"
+            services:
+              - docker

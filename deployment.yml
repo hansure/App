@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{name}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{name}}
+  template:
+    metadata:
+      labels:
+        app: {{name}}
+    spec:
+      containers:
+      - name: {{name}}
+        image: {{image}}
+        resources:
+            limits:
+                memory: "1Gi"
+                cpu: "1000m"
+            requests:
+                memory: "100Mi"
+                cpu: "50m"
+        imagePullPolicy: Always
+        readinessProbe:
+          tcpSocket:
+            port: {{port}}
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: {{port}}
+          initialDelaySeconds: 60
+          periodSeconds: 20
+---
+#service
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{name}}
+spec:
+  type: NodePort
+  ports:
+    - protocol: TCP
+      port: {{port}}
+      targetPort: {{port}}
+  selector:
+    app: {{name}}
+
+---
+#Ingress
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/issue-temporary-certificate: "true"
+    acme.cert-manager.io/http01-edit-in-place: "true"
+  name: {{name}}-ingress
+spec:
+  rules:
+  - host: {{dns}}
+    http:
+      paths:
+      - backend:
+          serviceName: {{name}}
+          servicePort: {{port}}
+        path: /
+  tls:
+  - hosts:
+    - {{dns}}
+    secretName: {{dns}}-tls
+---
+#hpa
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{name}}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{name}}
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          #name: cpu-percent
+          type: Utilization
+          averageUtilization: 200
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          #name: memory-percent
+          type: Utilization
+          averageUtilization: 200
